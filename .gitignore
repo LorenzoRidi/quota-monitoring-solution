@@ -3,6 +3,8 @@ quota-notification/target
 quota-scan/target
 key.json
 terraform.tfstate*
+*.tfvars
+*.tfvars.json
 terraform/example/*.zip
 
 .*
