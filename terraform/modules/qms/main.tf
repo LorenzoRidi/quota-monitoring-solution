@@ -25,6 +25,11 @@ locals {
   use_github_release = var.qms_version != "main" ? true : false
 }
 
+data "google_project" "project" {
+  project_id = var.project_id
+}
+
+
 # Enable Cloud Resource Manager API
 module "project-service-cloudresourcemanager" {
   source  = "terraform-google-modules/project-factory/google//modules/project_services"
@@ -693,4 +698,18 @@ resource "google_project_organization_policy" "ingress_policy_override" {
     default = true
   }
 }
+
+# Support Cloud Functions 2nd Gen Cloud Build SA acting as the custom runtime service account
+resource "google_service_account_iam_member" "cloudbuild_sa_user" {
+  service_account_id = "projects/${var.project_id}/serviceAccounts/${var.service_account_email}"
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${data.google_project.project.number}@cloudbuild.gserviceaccount.com"
+}
+
+resource "google_service_account_iam_member" "compute_sa_user" {
+  service_account_id = "projects/${var.project_id}/serviceAccounts/${var.service_account_email}"
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${data.google_project.project.number}-compute@developer.gserviceaccount.com"
+}
+
 
