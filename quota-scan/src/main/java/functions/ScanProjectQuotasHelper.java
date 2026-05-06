@@ -329,9 +329,31 @@ public class ScanProjectQuotasHelper {
     }
 
     projectQuota.setQuotaLimit(data.getPointData(0).getValues(indexMap.get("limit")).getInt64Value());
-    projectQuota.setThreshold(Integer.valueOf(THRESHOLD));
+    projectQuota.setThreshold(parseThreshold(THRESHOLD));
 
     return projectQuota;
+  }
+
+  static Integer parseThreshold(String thresholdStr) {
+    if (thresholdStr == null || thresholdStr.trim().isEmpty()) {
+      logger.warning("THRESHOLD environment variable is not set or empty. Defaulting to 80.");
+      return 80;
+    }
+    try {
+      return Integer.valueOf(thresholdStr.trim());
+    } catch (NumberFormatException e) {
+      try {
+        double val = Double.parseDouble(thresholdStr.trim());
+        if (val >= 0.0 && val <= 1.0) {
+          return (int) Math.round(val * 100);
+        } else {
+          return (int) Math.round(val);
+        }
+      } catch (NumberFormatException ex) {
+        logger.log(Level.SEVERE, "Failed to parse THRESHOLD: " + thresholdStr + ". Defaulting to 80. Error: " + ex.getMessage(), ex);
+        return 80;
+      }
+    }
   }
 
   private static String getMql(Quotas q) {
