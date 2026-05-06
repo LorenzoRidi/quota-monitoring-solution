@@ -759,5 +759,26 @@ resource "google_project_iam_member" "cloudbuild_service_agent" {
   member  = "serviceAccount:service-${data.google_project.project.number}@gcp-sa-cloudbuild.iam.gserviceaccount.com"
 }
 
+# Grant roles/run.invoker to Compute default SA and Custom SA to permit Eventarc/PubSub to invoke Cloud Run
+resource "google_project_iam_member" "compute_run_invoker" {
+  project = var.project_id
+  role    = "roles/run.invoker"
+  member  = "serviceAccount:${data.google_project.project.number}-compute@developer.gserviceaccount.com"
+}
+
+resource "google_project_iam_member" "custom_sa_run_invoker" {
+  project = var.project_id
+  role    = "roles/run.invoker"
+  member  = "serviceAccount:${var.service_account_email}"
+}
+
+# Grant Token Creator role to Pub/Sub system service account for secure token generation
+resource "google_project_iam_member" "pubsub_token_creator" {
+  project = var.project_id
+  role    = "roles/iam.serviceAccountTokenCreator"
+  member  = "serviceAccount:service-${data.google_project.project.number}@gcp-sa-pubsub.iam.gserviceaccount.com"
+}
+
+
 
 
