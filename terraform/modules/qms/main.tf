@@ -56,7 +56,10 @@ module "project-services" {
     "cloudscheduler.googleapis.com",
     "cloudfunctions.googleapis.com",
     "cloudbuild.googleapis.com",
-    "bigquerydatatransfer.googleapis.com"
+    "bigquerydatatransfer.googleapis.com",
+    "run.googleapis.com",
+    "eventarc.googleapis.com",
+    "artifactregistry.googleapis.com"
   ]
   depends_on = [module.project-service-cloudresourcemanager]
 }
@@ -88,7 +91,7 @@ resource "google_cloud_scheduler_job" "job" {
 
   http_target {
     http_method = "POST"
-    uri         = google_cloudfunctions_function.function-listProjects.https_trigger_url
+    uri         = google_cloudfunctions2_function.function-listProjects.service_config[0].uri
     body        = base64encode("{\"organizations\":\"${var.organizations}\",\"threshold\":\"${var.threshold}\",\"projectId\":\"${var.project_id}\"}")
 
     oidc_token {
@@ -112,7 +115,7 @@ resource "google_cloud_scheduler_job" "app_alert_configure_job" {
 
   http_target {
     http_method = "POST"
-    uri         = google_cloudfunctions_function.function-configureAppAlert.https_trigger_url
+    uri         = google_cloudfunctions2_function.function-configureAppAlert.service_config[0].uri
 
     oidc_token {
       service_account_email = var.service_account_email
@@ -160,32 +163,40 @@ resource "google_storage_bucket_object" "source_code_object" {
 }
 
 # cloud function to list projects
-resource "google_cloudfunctions_function" "function-listProjects" {
+resource "google_cloudfunctions2_function" "function-listProjects" {
   name        = var.cloud_function_list_project
+  location    = local.expanded_region
   description = var.cloud_function_list_project_desc
-  runtime     = "java11"
-  region      = local.expanded_region
+  depends_on  = [module.project-services]
 
-  available_memory_mb   = var.cloud_function_list_project_memory
-  source_archive_bucket = google_storage_bucket.bucket_gcf_source.name
-  source_archive_object = google_storage_bucket_object.source_code_object.name
-  trigger_http          = true
-  entry_point           = "functions.ListProjects"
-  service_account_email = var.service_account_email
-  timeout               = var.cloud_function_list_project_timeout
-  depends_on            = [module.project-services]
+  build_config {
+    runtime     = "java17"
+    entry_point = "functions.ListProjects"
+    source {
+      storage_source {
+        bucket = google_storage_bucket.bucket_gcf_source.name
+        object = google_storage_bucket_object.source_code_object.name
+      }
+    }
+  }
 
-  environment_variables = {
-    PUBLISH_TOPIC = google_pubsub_topic.topic_alert_project_id.name
-    HOME_PROJECT  = var.project_id
+  service_config {
+    max_instance_count    = 100
+    available_memory      = "${var.cloud_function_list_project_memory}Mi"
+    timeout_seconds       = var.cloud_function_list_project_timeout
+    service_account_email = var.service_account_email
+    environment_variables = {
+      PUBLISH_TOPIC = google_pubsub_topic.topic_alert_project_id.name
+      HOME_PROJECT  = var.project_id
+    }
   }
 }
 
 # IAM entry for all users to invoke the function
-resource "google_cloudfunctions_function_iam_member" "invoker-listProjects" {
-  project        = google_cloudfunctions_function.function-listProjects.project
-  region         = google_cloudfunctions_function.function-listProjects.region
-  cloud_function = google_cloudfunctions_function.function-listProjects.name
+resource "google_cloudfunctions2_function_iam_member" "invoker-listProjects" {
+  project        = google_cloudfunctions2_function.function-listProjects.project
+  location       = google_cloudfunctions2_function.function-listProjects.location
+  cloud_function = google_cloudfunctions2_function.function-listProjects.name
   depends_on     = [module.project-services]
 
   role   = "roles/cloudfunctions.invoker"
@@ -193,38 +204,48 @@ resource "google_cloudfunctions_function_iam_member" "invoker-listProjects" {
 }
 
 # Second cloud function to scan project
-resource "google_cloudfunctions_function" "function-scanProject" {
+resource "google_cloudfunctions2_function" "function-scanProject" {
   name        = var.cloud_function_scan_project
+  location    = local.expanded_region
   description = var.cloud_function_scan_project_desc
-  runtime     = "java11"
-  region      = local.expanded_region
+  depends_on  = [module.project-services]
 
-  available_memory_mb   = var.cloud_function_scan_project_memory
-  source_archive_bucket = google_storage_bucket.bucket_gcf_source.name
-  source_archive_object = google_storage_bucket_object.source_code_object.name
-  entry_point           = "functions.ScanProjectQuotas"
-  service_account_email = var.service_account_email
-  timeout               = var.cloud_function_scan_project_timeout
-  depends_on            = [module.project-services]
-
-  event_trigger {
-    event_type = "google.pubsub.topic.publish"
-    resource   = var.topic_alert_project_id
+  build_config {
+    runtime     = "java17"
+    entry_point = "functions.ScanProjectQuotas"
+    source {
+      storage_source {
+        bucket = google_storage_bucket.bucket_gcf_source.name
+        object = google_storage_bucket_object.source_code_object.name
+      }
+    }
   }
 
-  environment_variables = {
-    NOTIFICATION_TOPIC = google_pubsub_topic.topic_alert_notification.name
-    THRESHOLD          = var.threshold
-    BIG_QUERY_DATASET  = var.big_query_dataset_id
-    BIG_QUERY_TABLE    = var.big_query_table_id
+  service_config {
+    max_instance_count    = 100
+    available_memory      = "${var.cloud_function_scan_project_memory}Mi"
+    timeout_seconds       = var.cloud_function_scan_project_timeout
+    service_account_email = var.service_account_email
+    environment_variables = {
+      NOTIFICATION_TOPIC = google_pubsub_topic.topic_alert_notification.name
+      THRESHOLD          = var.threshold
+      BIG_QUERY_DATASET  = var.big_query_dataset_id
+      BIG_QUERY_TABLE    = var.big_query_table_id
+    }
+  }
+
+  event_trigger {
+    trigger_region = local.expanded_region
+    event_type     = "google.cloud.pubsub.topic.v1.messagePublished"
+    pubsub_topic   = google_pubsub_topic.topic_alert_project_id.id
   }
 }
 
 # IAM entry for all users to invoke the function
-resource "google_cloudfunctions_function_iam_member" "invoker-scanProject" {
-  project        = google_cloudfunctions_function.function-scanProject.project
-  region         = google_cloudfunctions_function.function-scanProject.region
-  cloud_function = google_cloudfunctions_function.function-scanProject.name
+resource "google_cloudfunctions2_function_iam_member" "invoker-scanProject" {
+  project        = google_cloudfunctions2_function.function-scanProject.project
+  location       = google_cloudfunctions2_function.function-scanProject.location
+  cloud_function = google_cloudfunctions2_function.function-scanProject.name
   depends_on     = [module.project-services]
 
   role   = "roles/cloudfunctions.invoker"
@@ -263,39 +284,49 @@ resource "google_storage_bucket_object" "source_code_notification_object" {
 }
 
 # Third cloud function to send notification
-resource "google_cloudfunctions_function" "function-notificationProject" {
+resource "google_cloudfunctions2_function" "function-notificationProject" {
   name        = var.cloud_function_notification_project
+  location    = local.expanded_region
   description = var.cloud_function_notification_project_desc
-  runtime     = "java11"
-  region      = local.expanded_region
+  depends_on  = [module.project-services]
 
-  available_memory_mb   = var.cloud_function_notification_project_memory
-  source_archive_bucket = google_storage_bucket.bucket_gcf_source.name
-  source_archive_object = google_storage_bucket_object.source_code_notification_object.name
-  entry_point           = "functions.SendNotification"
-  service_account_email = var.service_account_email
-  timeout               = var.cloud_function_notification_project_timeout
-  depends_on            = [module.project-services]
-
-  event_trigger {
-    event_type = "google.pubsub.topic.publish"
-    resource   = var.topic_alert_notification
+  build_config {
+    runtime     = "java17"
+    entry_point = "functions.SendNotification"
+    source {
+      storage_source {
+        bucket = google_storage_bucket.bucket_gcf_source.name
+        object = google_storage_bucket_object.source_code_notification_object.name
+      }
+    }
   }
 
-  environment_variables = {
-    HOME_PROJECT  = var.project_id
-    ALERT_DATASET = var.big_query_alert_dataset_id
-    ALERT_TABLE   = var.big_query_alert_table_id
-    APP_ALERT_DATASET = var.big_query_alert_dataset_id
-    APP_ALERT_TABLE   = var.big_query_app_alert_table_id
+  service_config {
+    max_instance_count    = 100
+    available_memory      = "${var.cloud_function_notification_project_memory}Mi"
+    timeout_seconds       = var.cloud_function_notification_project_timeout
+    service_account_email = var.service_account_email
+    environment_variables = {
+      HOME_PROJECT  = var.project_id
+      ALERT_DATASET = var.big_query_alert_dataset_id
+      ALERT_TABLE   = var.big_query_alert_table_id
+      APP_ALERT_DATASET = var.big_query_alert_dataset_id
+      APP_ALERT_TABLE   = var.big_query_app_alert_table_id
+    }
+  }
+
+  event_trigger {
+    trigger_region = local.expanded_region
+    event_type     = "google.cloud.pubsub.topic.v1.messagePublished"
+    pubsub_topic   = google_pubsub_topic.topic_alert_notification.id
   }
 }
 
 # IAM entry for all users to invoke the function
-resource "google_cloudfunctions_function_iam_member" "invoker-notificationProject" {
-  project        = google_cloudfunctions_function.function-notificationProject.project
-  region         = google_cloudfunctions_function.function-notificationProject.region
-  cloud_function = google_cloudfunctions_function.function-notificationProject.name
+resource "google_cloudfunctions2_function_iam_member" "invoker-notificationProject" {
+  project        = google_cloudfunctions2_function.function-notificationProject.project
+  location       = google_cloudfunctions2_function.function-notificationProject.location
+  cloud_function = google_cloudfunctions2_function.function-notificationProject.name
   depends_on     = [module.project-services]
 
   role   = "roles/cloudfunctions.invoker"
@@ -303,34 +334,42 @@ resource "google_cloudfunctions_function_iam_member" "invoker-notificationProjec
 }
 
 # cloud function to configure app alerting
-resource "google_cloudfunctions_function" "function-configureAppAlert" {
+resource "google_cloudfunctions2_function" "function-configureAppAlert" {
   name        = var.cloud_function_config_app_alert
+  location    = local.expanded_region
   description = var.cloud_function_config_app_alert_desc
-  runtime     = "java11"
-  region      = local.expanded_region
+  depends_on  = [module.project-services]
 
-  available_memory_mb   = var.cloud_function_config_app_alert_memory
-  source_archive_bucket = google_storage_bucket.bucket_gcf_source.name
-  source_archive_object = google_storage_bucket_object.source_code_notification_object.name
-  trigger_http          = true
-  entry_point           = "functions.ConfigureAppAlert"
-  service_account_email = var.service_account_email
-  timeout               = var.cloud_function_config_app_alert_timeout
-  depends_on            = [module.project-services]
+  build_config {
+    runtime     = "java17"
+    entry_point = "functions.ConfigureAppAlert"
+    source {
+      storage_source {
+        bucket = google_storage_bucket.bucket_gcf_source.name
+        object = google_storage_bucket_object.source_code_notification_object.name
+      }
+    }
+  }
 
-  environment_variables = {
-    HOME_PROJECT  = var.project_id
-    APP_ALERT_DATASET = var.big_query_alert_dataset_id
-    APP_ALERT_TABLE   = var.big_query_app_alert_table_id
-    CSV_SOURCE_URI = "gs://${google_storage_bucket.bucket_gcf_source.name}/${var.app_alert_csv_file_name}"
+  service_config {
+    max_instance_count    = 100
+    available_memory      = "${var.cloud_function_config_app_alert_memory}Mi"
+    timeout_seconds       = var.cloud_function_config_app_alert_timeout
+    service_account_email = var.service_account_email
+    environment_variables = {
+      HOME_PROJECT  = var.project_id
+      APP_ALERT_DATASET = var.big_query_alert_dataset_id
+      APP_ALERT_TABLE   = var.big_query_app_alert_table_id
+      CSV_SOURCE_URI = "gs://${google_storage_bucket.bucket_gcf_source.name}/${var.app_alert_csv_file_name}"
+    }
   }
 }
 
 # IAM entry for all users to invoke the function
-resource "google_cloudfunctions_function_iam_member" "invoker-configureAppAlert" {
-  project        = google_cloudfunctions_function.function-configureAppAlert.project
-  region         = google_cloudfunctions_function.function-configureAppAlert.region
-  cloud_function = google_cloudfunctions_function.function-configureAppAlert.name
+resource "google_cloudfunctions2_function_iam_member" "invoker-configureAppAlert" {
+  project        = google_cloudfunctions2_function.function-configureAppAlert.project
+  location       = google_cloudfunctions2_function.function-configureAppAlert.location
+  cloud_function = google_cloudfunctions2_function.function-configureAppAlert.name
   depends_on     = [module.project-services]
 
   role   = "roles/cloudfunctions.invoker"
