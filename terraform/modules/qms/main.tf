@@ -97,7 +97,11 @@ resource "google_cloud_scheduler_job" "job" {
   http_target {
     http_method = "POST"
     uri         = google_cloudfunctions2_function.function-listProjects.service_config[0].uri
-    body        = base64encode("{\"organizations\":\"${var.organizations}\",\"threshold\":\"${var.threshold}\",\"projectId\":\"${var.project_id}\"}")
+    body        = base64encode(jsonencode({
+      organizations = var.organizations
+      threshold     = var.threshold
+      projectId     = var.project_id
+    }))
 
     oidc_token {
       service_account_email = var.service_account_email
