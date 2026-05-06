@@ -38,4 +38,5 @@ module "qms" {
   alert_log_bucket_name         = var.alert_log_bucket_name
   notification_email_address    = var.notification_email_address
   threshold                     = var.threshold
+  revert_org_policies           = var.revert_org_policies
 }

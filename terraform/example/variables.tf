@@ -53,3 +53,10 @@ variable "alert_log_bucket_name" {
   description = "Bucket Name for alert Log Sink (must be globally unique)"
   type        = string
 }
+
+variable "revert_org_policies" {
+  description = "Whether to revert the google_project_organization_policies that could interfere with deploying/running QMS"
+  type        = bool
+  default     = false
+}
+

@@ -643,3 +643,15 @@ resource "google_monitoring_alert_policy" "alert_policy_quota" {
     google_logging_metric.quota_logging_metric
   ]
 }
+
+# Revert allowed ingress settings Org Policy for Cloud Functions if requested
+resource "google_project_organization_policy" "ingress_policy_override" {
+  count      = var.revert_org_policies ? 1 : 0
+  project    = var.project_id
+  constraint = "constraints/cloudfunctions.allowedIngressSettings"
+
+  restore_policy {
+    default = true
+  }
+}
+

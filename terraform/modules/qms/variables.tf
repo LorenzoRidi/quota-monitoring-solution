@@ -335,4 +335,11 @@ variable "app_alert_csv_file_name" {
   default     = "QMS_app_alerting.csv"
 }
 
+variable "revert_org_policies" {
+  description = "Whether to revert the google_project_organization_policies that could interfere with deploying/running QMS"
+  type        = bool
+  default     = false
+}
+
+
 
