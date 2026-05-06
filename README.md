@@ -1,7 +1,15 @@
-# Quota Monitoring and Alerting
+# Quota Monitoring and Alerting (Modernized Fork)
 
-> An easy-to-deploy Looker Studio Dashboard with alerting capabilities, showing
-usage and quota limits in an organization or folder.
+> **NOTE:** This repository is a modernized fork of Google's original [Quota Monitoring Solution](https://github.com/google/quota-monitoring-solution), updated to meet modern deployment, runtime, and corporate security environments.
+
+## Key Upgrades & Modernization
+
+1. **Java 17 Target Upgrade**: Migrated all Java packages (`quota-scan` and `quota-notification`) from the now-decommissioned Java 11 runtime to Java 17.
+2. **Cloud Run Functions (2nd Gen)**: Refactored all four core Cloud Functions to leverage GCP's 2nd Gen Cloud Run Functions, improving performance, concurrency, and long-term serviceability.
+3. **Automated Build Permission Overrides**: Added zero-configuration project-level IAM helper rules inside the module (`main.tf`) to grant Logging, Storage, and Artifact Registry permissions to the Cloud Build agent, avoiding standard privilege failures.
+4. **Toggleable Org Ingress Reversions**: Added a configurable `revert_org_policies` boolean flag at the root module to temporarily override strict corporate ingress policy constraints during deployment.
+
+---
 
 Google Cloud enforces [quotas](https://cloud.google.com/docs/quota) on resource
 usage for project owners, setting a limit on how much of a particular Google
