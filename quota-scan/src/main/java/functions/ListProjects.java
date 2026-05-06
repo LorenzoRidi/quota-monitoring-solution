@@ -78,7 +78,6 @@ public class ListProjects implements HttpFunction {
     request.getQueryParameters();
 
     // Parse JSON request and check for "organization" and "projectId" fields
-    String responseMessage = null;
     try {
       JsonElement requestParsed = gson.fromJson(request.getReader(), JsonElement.class);
       JsonObject requestJson = null;
@@ -87,9 +86,15 @@ public class ListProjects implements HttpFunction {
         requestJson = requestParsed.getAsJsonObject();
       }
 
-      if (requestJson != null && requestJson.has("organizations")) {
+      if (requestJson != null && requestJson.has("organizations") && requestJson.has("projectId")) {
         projectId = requestJson.get("projectId").getAsString();
       }
+    } catch (JsonParseException e) {
+      logger.log(Level.WARNING, "Error parsing request body JSON (proceeding with defaults): " + e.getMessage(), e);
+    }
+
+    String responseMessage = null;
+    try {
       logger.info("Publishing message to topic: " + TOPIC_NAME);
       logger.info("ProjectId: " + projectId);
 
@@ -102,8 +107,6 @@ public class ListProjects implements HttpFunction {
       responseMessage = "Message published.";
       List<String> projectIds = getProjectIds();
       publishMessages(projectIds);
-    } catch (JsonParseException e) {
-      logger.severe("Error parsing JSON: " + e.getMessage());
     } catch (InterruptedException | ExecutionException | GeneralSecurityException e) {
       logger.log(Level.SEVERE, "Error publishing Pub/Sub message: " + e.getMessage(), e);
       responseMessage = "Error publishing Pub/Sub message; see logs for more info.";
